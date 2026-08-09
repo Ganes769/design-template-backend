@@ -3,7 +3,6 @@ from pymongo.errors import DuplicateKeyError
 from src.db import get_db
 from src.models.theme import DesignTheme
 
-
 COLLECTION = "themes"
 
 
