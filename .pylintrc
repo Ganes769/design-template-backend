@@ -1,0 +1,70 @@
+[MAIN]
+jobs=1
+py-version=3.14
+ignore=
+    layers,
+    .serverless,
+    .git,
+    env,
+    venv
+ignore-patterns=
+    ^\.venv
+init-hook=
+    import sys; sys.path.insert(0, ".")
+
+[MESSAGES CONTROL]
+disable=
+    C0114,
+    C0115,
+    C0116,
+    R0903,
+    W0718,
+    W0613,
+    W0603
+
+[FORMAT]
+max-line-length=100
+indent-string='    '
+
+[BASIC]
+good-names=
+    i,
+    j,
+    k,
+    e,
+    ex,
+    db,
+    id,
+    _,
+    _client
+argument-rgx=[a-z_][a-z0-9_]{0,30}$
+attr-rgx=[a-z_][a-z0-9_]{0,30}$
+variable-rgx=[a-z_][a-z0-9_]{0,30}$
+const-rgx=(([A-Z_][A-Z0-9_]*)|(__.*__)|(_[a-z0-9_]+))$
+class-rgx=[A-Z][a-zA-Z0-9]+$
+function-rgx=[a-z_][a-z0-9_]{0,50}$
+method-rgx=[a-z_][a-z0-9_]{0,50}$
+
+[DESIGN]
+max-args=8
+max-attributes=15
+max-bool-expr=5
+max-branches=15
+max-locals=20
+max-parents=7
+max-public-methods=25
+max-returns=8
+max-statements=60
+
+[IMPORTS]
+known-third-party=
+    pymongo,
+    pydantic,
+    certifi,
+    boto3,
+    botocore,
+    requests
+
+[REPORTS]
+output-format=colorized
+score=yes

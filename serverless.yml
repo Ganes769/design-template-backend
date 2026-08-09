@@ -1,8 +1,5 @@
-# "org" ensures this Service is used with the correct Serverless Framework Access Key.
 org: skillrank1
-# "app" enables Serverless Framework Dashboard features and sharing them with other Services.
 app: design-template
-# "service" is the name of this project. This will also be added to your AWS resource names.
 service: design-template
 
 provider:
@@ -10,17 +7,17 @@ provider:
   httpApi:
     cors:
       allowedOrigins:
-      - https://6a7777a2099a2b52c44a7dc4--ui-design-principles.netlify.app/
-      - http://localhost:3000
+        - https://6a7777a2099a2b52c44a7dc4--ui-design-principles.netlify.app/
+        - http://localhost:3000
       allowedHeaders:
-      - Content-Type
-      - Authorization
+        - Content-Type
+        - Authorization
       allowedMethods:
-      - GET
-      - POST
-      - PUT
-      - DELETE
-      - OPTIONS
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - OPTIONS
       allowCredentials: true
       maxAge: 86400
   runtime: python3.14
@@ -28,8 +25,6 @@ provider:
   architecture: arm64
   stage: ${opt:stage, 'dev'}
   environment:
-    # Stored once in AWS SSM — SecureString is auto-decrypted in Framework v4
-    # Path: /design-template/<stage>/mongodb-uri
     MONGODB_URI: ${ssm:/design-template/${sls:stage}/mongodb-uri}
     MONGODB_DB: ${ssm:/design-template/${sls:stage}/mongodb-db, 'app'}
 
@@ -38,27 +33,44 @@ layers:
     path: layers/common
     name: ${self:service}-${sls:stage}-pymongo
     compatibleRuntimes:
-    - python3.14
+      - python3.14
     compatibleArchitectures:
-    - arm64
+      - arm64
 
 functions:
   hello:
     handler: src/api/handler.hello
     package:
       patterns:
-      - "!src/**"
-      - "!./**"
-      - src/api/**
-      - src/db.py
-      - src/__init__.py
+        - "!src/**"
+        - "!./**"
+        - src/api/**
+        - src/db.py
+        - src/__init__.py
     layers:
-    - !Ref PymongoDependencyLambdaLayer
+      - !Ref PymongoDependencyLambdaLayer
     events:
-    - httpApi:
-        path: /
-        method: get
-        cors: true
+      - httpApi:
+          path: /
+          method: get
+
+  createTheme:
+    handler: src/api/themes.create
+    package:
+      patterns:
+        - "!src/**"
+        - "!./**"
+        - src/api/**
+        - src/models/**
+        - src/services/**
+        - src/db.py
+        - src/__init__.py
+    layers:
+      - !Ref PymongoDependencyLambdaLayer
+    events:
+      - httpApi:
+          path: /themes
+          method: post
 
 custom:
   scripts:

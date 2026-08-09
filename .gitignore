@@ -22,3 +22,11 @@ var/
 
 # Lambda layer built packages
 layers/**/python/
+
+# Python cache / tooling
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pylint.d/

@@ -1,3 +1,4 @@
 pymongo
 certifi
+pydantic
 requests==2.25.1
