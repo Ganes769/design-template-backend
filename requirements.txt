@@ -1,0 +1,4 @@
+pymongo
+boto3
+botocore
+requests==2.25.1

@@ -1,0 +1,49 @@
+# "org" ensures this Service is used with the correct Serverless Framework Access Key.
+org: skillrank1
+# "app" enables Serverless Framework Dashboard features and sharing them with other Services.
+app: design-template
+# "service" is the name of this project. This will also be added to your AWS resource names.
+service: design-template
+
+provider:
+  name: aws
+  runtime: python3.14
+  region: eu-west-2
+  architecture: arm64
+  stage: ${opt:stage, 'dev'}
+  environment:
+    # Stored once in AWS SSM — SecureString is auto-decrypted in Framework v4
+    # Path: /design-template/<stage>/mongodb-uri
+    MONGODB_URI: ${ssm:/design-template/${sls:stage}/mongodb-uri}
+    MONGODB_DB: ${ssm:/design-template/${sls:stage}/mongodb-db, 'app'}
+
+layers:
+  common:
+    path: layers/common
+    name: ${self:service}-${sls:stage}-common
+    compatibleRuntimes:
+      - python3.14
+    compatibleArchitectures:
+      - arm64
+
+functions:
+  hello:
+    handler: src/api/handler.hello
+    layers:
+      - { Ref: CommonLambdaLayer }
+    events:
+      - httpApi:
+          path: /
+          method: get
+
+package:
+  patterns:
+    - '!**'
+    - 'src/**'
+    - '!**/*.pyc'
+    - '!**/__pycache__/**'
+
+custom:
+  scripts:
+    hooks:
+      before:package:initialize: chmod +x ./installLayers.sh && ./installLayers.sh
