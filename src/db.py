@@ -1,5 +1,6 @@
 import os
 
+import certifi
 from pymongo import MongoClient
 
 _client = None
@@ -12,6 +13,8 @@ def get_client():
             os.environ["MONGODB_URI"],
             maxPoolSize=1,
             serverSelectionTimeoutMS=5000,
+            tls=True,
+            tlsCAFile=certifi.where(),
         )
     return _client
 

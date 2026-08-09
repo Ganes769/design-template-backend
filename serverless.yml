@@ -7,6 +7,22 @@ service: design-template
 
 provider:
   name: aws
+  httpApi:
+    cors:
+      allowedOrigins:
+      - https://6a7777a2099a2b52c44a7dc4--ui-design-principles.netlify.app/
+      - http://localhost:3000
+      allowedHeaders:
+      - Content-Type
+      - Authorization
+      allowedMethods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+      allowCredentials: true
+      maxAge: 86400
   runtime: python3.14
   region: eu-west-2
   architecture: arm64
@@ -18,30 +34,31 @@ provider:
     MONGODB_DB: ${ssm:/design-template/${sls:stage}/mongodb-db, 'app'}
 
 layers:
-  common:
+  pymongoDependency:
     path: layers/common
-    name: ${self:service}-${sls:stage}-common
+    name: ${self:service}-${sls:stage}-pymongo
     compatibleRuntimes:
-      - python3.14
+    - python3.14
     compatibleArchitectures:
-      - arm64
+    - arm64
 
 functions:
   hello:
     handler: src/api/handler.hello
+    package:
+      patterns:
+      - "!src/**"
+      - "!./**"
+      - src/api/**
+      - src/db.py
+      - src/__init__.py
     layers:
-      - { Ref: CommonLambdaLayer }
+    - !Ref PymongoDependencyLambdaLayer
     events:
-      - httpApi:
-          path: /
-          method: get
-
-package:
-  patterns:
-    - '!**'
-    - 'src/**'
-    - '!**/*.pyc'
-    - '!**/__pycache__/**'
+    - httpApi:
+        path: /
+        method: get
+        cors: true
 
 custom:
   scripts:
