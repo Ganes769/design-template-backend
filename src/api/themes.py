@@ -1,5 +1,6 @@
 import base64
 import json
+import re
 from email import message_from_bytes
 from email.policy import default as email_policy
 from urllib.parse import parse_qs
@@ -9,24 +10,42 @@ from pydantic import ValidationError
 from src.models.theme import DesignThemeCreate
 from src.services.themes import create_theme
 
-NESTED_JSON_FIELDS = {"classes", "designProfile"}
 JSON_WRAPPER_KEYS = ("data", "theme", "payload", "body", "json")
 
-FORM_DATA_HINT = (
-    "Postman: Body -> form-data -> add key 'data' (Text) with the full theme JSON string."
-)
 
-
-class InvalidFormDataError(ValueError):
-    pass
-
-
-def _response(status: int, body: dict):
+def _response(status: int, body: dict | None = None):
+    payload = {
+        "statusCode": status,
+        "status": "success" if 200 <= status < 300 else "error",
+    }
+    if body:
+        payload.update(body)
     return {
         "statusCode": status,
         "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(body),
+        "body": json.dumps(payload),
     }
+
+
+def _unwrap_payload(payload: dict) -> dict:
+    if not isinstance(payload, dict) or "slug" in payload:
+        return payload
+    for key in JSON_WRAPPER_KEYS:
+        nested = payload.get(key)
+        if isinstance(nested, dict) and "slug" in nested:
+            return nested
+    return payload
+
+
+def _looks_like_theme(payload: dict) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if "slug" in payload:
+        return True
+    return any(
+        isinstance(payload.get(key), dict) and "slug" in payload[key]
+        for key in JSON_WRAPPER_KEYS
+    )
 
 
 def _header(event: dict, name: str) -> str:
@@ -45,7 +64,7 @@ def _raw_body(event: dict) -> bytes:
 
 
 def _extract_json_object(text: str) -> dict | None:
-    text = text.strip()
+    text = (text or "").strip().lstrip("\ufeff")
     if not text:
         return None
 
@@ -56,72 +75,89 @@ def _extract_json_object(text: str) -> dict | None:
     except json.JSONDecodeError:
         pass
 
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end <= start:
+    # Find all candidate objects containing "slug"
+    for match in re.finditer(r"\{", text):
+        start = match.start()
+        depth = 0
+        for index in range(start, len(text)):
+            char = text[index]
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    chunk = text[start : index + 1]
+                    if '"slug"' not in chunk and "'slug'" not in chunk:
+                        break
+                    try:
+                        parsed = json.loads(chunk)
+                    except json.JSONDecodeError:
+                        break
+                    if isinstance(parsed, dict) and _looks_like_theme(parsed):
+                        return parsed
+                    break
+    return None
+
+
+def _normalize_fields(fields: dict) -> dict:
+    return {
+        str(key): (
+            value.decode("utf-8", errors="replace")
+            if isinstance(value, bytes)
+            else str(value)
+        )
+        for key, value in fields.items()
+    }
+
+
+def _payload_from_fields(fields: dict) -> dict | None:
+    if not fields:
         return None
 
-    try:
-        parsed = json.loads(text[start : end + 1])
-        if isinstance(parsed, dict):
-            return parsed
-    except json.JSONDecodeError:
-        return None
+    normalized = _normalize_fields(fields)
+
+    for key in JSON_WRAPPER_KEYS:
+        if key in normalized:
+            obj = _extract_json_object(normalized[key])
+            if obj and _looks_like_theme(obj):
+                return _unwrap_payload(obj)
+
+    for value in normalized.values():
+        obj = _extract_json_object(value)
+        if obj and _looks_like_theme(obj):
+            return _unwrap_payload(obj)
+
+
+    rebuilt_parts = []
+    for key, value in normalized.items():
+        rebuilt_parts.append(key)
+        if value:
+            rebuilt_parts.append(value)
+    rebuilt = "\n".join(rebuilt_parts)
+    obj = _extract_json_object(rebuilt)
+    if obj and _looks_like_theme(obj):
+        return _unwrap_payload(obj)
+
+    joined = "\n".join(normalized.values())
+    obj = _extract_json_object(joined)
+    if obj and _looks_like_theme(obj):
+        return _unwrap_payload(obj)
+
+    if "slug" in normalized:
+        return _unwrap_payload(normalized)
 
     return None
 
 
-def _coerce_form_fields(fields: dict) -> dict:
-    if not fields:
-        raise InvalidFormDataError(FORM_DATA_HINT)
-
-    for key in JSON_WRAPPER_KEYS:
-        if key in fields and isinstance(fields[key], str):
-            obj = _extract_json_object(fields[key])
-            if obj:
-                return obj
-
-    if len(fields) == 1:
-        only = next(iter(fields.values()))
-        if isinstance(only, str):
-            obj = _extract_json_object(only)
-            if obj:
-                return obj
-
-    for value in fields.values():
-        if isinstance(value, str):
-            obj = _extract_json_object(value)
-            if obj and "slug" in obj:
-                return obj
-
-    payload = {}
-    for key, value in fields.items():
-        if key in NESTED_JSON_FIELDS and isinstance(value, str):
-            nested = _extract_json_object(value)
-            payload[key] = nested if nested is not None else value
-        else:
-            payload[key] = value
-
-    if "slug" not in payload:
-        raise InvalidFormDataError(FORM_DATA_HINT)
-
-    return payload
-
-
-def _parse_urlencoded(body: bytes) -> dict:
-    parsed = parse_qs(body.decode("utf-8"), keep_blank_values=True)
-    fields = {key: values[0] if len(values) == 1 else values for key, values in parsed.items()}
-    return _coerce_form_fields(fields)
-
-
-def _parse_multipart(body: bytes, content_type: str) -> dict:
+def _fields_from_multipart_email(body: bytes, content_type: str) -> dict:
     message = message_from_bytes(
-        f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8") + body,
+        f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8")
+        + body,
         policy=email_policy,
     )
     fields = {}
     if not message.is_multipart():
-        raise InvalidFormDataError(FORM_DATA_HINT)
+        return fields
 
     for part in message.iter_parts():
         name = part.get_param("name", header="content-disposition")
@@ -133,20 +169,78 @@ def _parse_multipart(body: bytes, content_type: str) -> dict:
         else:
             charset = part.get_content_charset() or "utf-8"
             value = payload.decode(charset, errors="replace")
-        fields[name] = value
+        fields[str(name)] = value if isinstance(value, str) else str(value)
+    return fields
 
+
+def _parse_boundary(content_type: str) -> str | None:
+    match = re.search(r"boundary=(.+)$", content_type, flags=re.IGNORECASE)
+    if not match:
+        return None
+    boundary = match.group(1).strip()
+    if boundary.startswith('"') and boundary.endswith('"'):
+        boundary = boundary[1:-1]
+    return boundary
+
+
+def _fields_from_multipart_manual(body: bytes, content_type: str) -> dict:
+    boundary = _parse_boundary(content_type)
+    if not boundary:
+        return {}
+
+    delimiter = f"--{boundary}".encode("utf-8")
+    fields = {}
+    for part in body.split(delimiter):
+        chunk = part.strip(b"\r\n-")
+        if not chunk:
+            continue
+        header_block, _, content = chunk.partition(b"\r\n\r\n")
+        if not content:
+            continue
+        content = content.rstrip(b"\r\n")
+        headers = header_block.decode("utf-8", errors="replace")
+        name_match = re.search(r'name="([^"]+)"', headers, flags=re.IGNORECASE)
+        if not name_match:
+            name_match = re.search(r"name=([^;\r\n]+)", headers, flags=re.IGNORECASE)
+        if not name_match:
+            continue
+        name = name_match.group(1).strip().strip('"')
+        fields[name] = content.decode("utf-8", errors="replace")
+    return fields
+
+
+def _parse_multipart(body: bytes, content_type: str) -> dict | None:
+    # Prefer scanning full body first — survives Postman bulk-edit mistakes
+    text = body.decode("utf-8", errors="replace")
+    payload = _extract_json_object(text)
+    if payload and _looks_like_theme(payload):
+        return _unwrap_payload(payload)
+
+    fields = _fields_from_multipart_email(body, content_type)
     if not fields:
-        raise InvalidFormDataError(FORM_DATA_HINT)
+        fields = _fields_from_multipart_manual(body, content_type)
 
-    return _coerce_form_fields(fields)
+    return _payload_from_fields(fields)
 
 
-def _parse_payload(event: dict) -> dict:
+def _parse_urlencoded(body: bytes) -> dict | None:
+    text = body.decode("utf-8", errors="replace")
+    payload = _extract_json_object(text)
+    if payload and _looks_like_theme(payload):
+        return _unwrap_payload(payload)
+
+    parsed = parse_qs(text, keep_blank_values=True)
+    fields = {key: values[0] if len(values) == 1 else values for key, values in parsed.items()}
+    return _payload_from_fields(fields)
+
+
+def _parse_payload(event: dict) -> dict | None:
     content_type = _header(event, "content-type").lower()
     raw = _raw_body(event)
-
     if not raw.strip():
-        return {}
+        return None
+
+    text = raw.decode("utf-8", errors="replace")
 
     if "multipart/form-data" in content_type:
         return _parse_multipart(raw, _header(event, "content-type"))
@@ -154,38 +248,36 @@ def _parse_payload(event: dict) -> dict:
     if "application/x-www-form-urlencoded" in content_type:
         return _parse_urlencoded(raw)
 
-    if "application/json" in content_type or content_type == "":
-        try:
-            return json.loads(raw.decode("utf-8"))
-        except json.JSONDecodeError as exc:
-            if content_type == "":
-                return _parse_urlencoded(raw)
-            raise exc
-
+    # JSON / unknown: parse directly, then recover from body text
     try:
-        return json.loads(raw.decode("utf-8"))
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
     except json.JSONDecodeError:
+        pass
+
+    payload = _extract_json_object(text)
+    if payload is not None:
+        return payload
+
+    if content_type == "":
         return _parse_urlencoded(raw)
+    return None
 
 
 def create(event, context):
     try:
-        payload = _parse_payload(event)
-        if not isinstance(payload, dict):
-            return _response(400, {"error": "invalid_payload", "hint": FORM_DATA_HINT})
+        parsed = _parse_payload(event)
+        payload = _unwrap_payload(parsed) if isinstance(parsed, dict) else None
+        if not isinstance(payload, dict) or not _looks_like_theme(payload):
+            return _response(400, {"error": "invalid_payload"})
+
         theme = DesignThemeCreate.model_validate(payload)
         created = create_theme(theme)
         return _response(201, {"data": created})
-    except InvalidFormDataError as exc:
-        return _response(400, {"error": "invalid_form_data", "hint": str(exc)})
-    except json.JSONDecodeError:
-        return _response(400, {"error": "invalid_json", "hint": FORM_DATA_HINT})
-    except ValidationError as exc:
-        return _response(
-            400,
-            {"error": "validation_failed", "details": exc.errors(), "hint": FORM_DATA_HINT},
-        )
+    except ValidationError:
+        return _response(400, {"error": "validation_failed"})
     except ValueError as exc:
         return _response(409, {"error": str(exc)})
-    except Exception as exc:
-        return _response(500, {"error": str(exc)})
+    except Exception:
+        return _response(500, {"error": "internal_error"})
