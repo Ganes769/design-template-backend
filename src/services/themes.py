@@ -17,3 +17,8 @@ def create_theme(theme: DesignTheme) -> dict:
         raise ValueError(f"Theme '{theme.slug}' already exists") from exc
 
     return theme.model_dump()
+
+
+def list_theme_slugs() -> list[str]:
+    db = get_db()
+    return [doc["_id"] for doc in db[COLLECTION].find({}, {"_id": 1})]

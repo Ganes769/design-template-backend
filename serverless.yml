@@ -7,17 +7,17 @@ provider:
   httpApi:
     cors:
       allowedOrigins:
-      - https://6a7777a2099a2b52c44a7dc4--ui-design-principles.netlify.app/
-      - http://localhost:3000
+        - https://6a7777a2099a2b52c44a7dc4--ui-design-principles.netlify.app/
+        - http://localhost:3000
       allowedHeaders:
-      - Content-Type
-      - Authorization
+        - Content-Type
+        - Authorization
       allowedMethods:
-      - GET
-      - POST
-      - PUT
-      - DELETE
-      - OPTIONS
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - OPTIONS
       allowCredentials: true
       maxAge: 86400
   runtime: python3.14
@@ -33,61 +33,79 @@ layers:
     path: layers/common
     name: ${self:service}-${sls:stage}-pymongo
     compatibleRuntimes:
-    - python3.14
+      - python3.14
     compatibleArchitectures:
-    - arm64
+      - arm64
 
 functions:
   hello:
     handler: src/api/handler.hello
     package:
       patterns:
-      - "!src/**"
-      - "!./**"
-      - src/api/**
-      - src/db.py
-      - src/__init__.py
+        - "!src/**"
+        - "!./**"
+        - src/api/**
+        - src/db.py
+        - src/__init__.py
     layers:
-    - !Ref PymongoDependencyLambdaLayer
+      - !Ref PymongoDependencyLambdaLayer
     events:
-    - httpApi:
-        path: /
-        method: get
+      - httpApi:
+          path: /
+          method: get
 
   createTheme:
     handler: src/api/themes.create
     package:
       patterns:
-      - "!src/**"
-      - "!./**"
-      - src/api/**
-      - src/models/**
-      - src/services/**
-      - src/db.py
-      - src/__init__.py
+        - "!src/**"
+        - "!./**"
+        - src/api/**
+        - src/models/**
+        - src/services/**
+        - src/db.py
+        - src/__init__.py
     layers:
-    - !Ref PymongoDependencyLambdaLayer
+      - !Ref PymongoDependencyLambdaLayer
     events:
-    - httpApi:
-        path: /themes
-        method: post
+      - httpApi:
+          path: /themes
+          method: post
   getTheme:
     handler: src/api/getTheme.lambda_handler
     package:
       patterns:
-      - "!src/**"
-      - "!./**"
-      - src/api/**
-      - src/models/**
-      - src/services/**
-      - src/db.py
-      - src/__init__.py
+        - "!src/**"
+        - "!./**"
+        - src/api/**
+        - src/models/**
+        - src/services/**
+        - src/db.py
+        - src/__init__.py
     layers:
-    - !Ref PymongoDependencyLambdaLayer
+      - !Ref PymongoDependencyLambdaLayer
     events:
-    - httpApi:
-        path: /themes/{slug}
-        method: get
+      - httpApi:
+          path: /themes/{slug}
+          method: get
+
+  getThemeSlugs:
+    handler: src/api/getThemeSlugs.lambda_handler
+    package:
+      patterns:
+        - "!src/**"
+        - "!./**"
+        - src/api/**
+        - src/models/**
+        - src/services/**
+        - src/db.py
+        - src/__init__.py
+    layers:
+      - !Ref PymongoDependencyLambdaLayer
+    events:
+      - httpApi:
+          path: /themes/slugs
+          method: get
 
 custom:
   scripts:
