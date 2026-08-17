@@ -89,6 +89,24 @@ functions:
           path: /themes/{slug}
           method: get
 
+  getThemes:
+    handler: src/api/getThemes.lambda_handler
+    package:
+      patterns:
+        - "!src/**"
+        - "!./**"
+        - src/api/**
+        - src/models/**
+        - src/services/**
+        - src/db.py
+        - src/__init__.py
+    layers:
+      - !Ref PymongoDependencyLambdaLayer
+    events:
+      - httpApi:
+          path: /themes
+          method: get
+
   getThemeSlugs:
     handler: src/api/getThemeSlugs.lambda_handler
     package:

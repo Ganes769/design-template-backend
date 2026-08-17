@@ -22,3 +22,13 @@ def create_theme(theme: DesignTheme) -> dict:
 def list_theme_slugs() -> list[str]:
     db = get_db()
     return [doc["_id"] for doc in db[COLLECTION].find({}, {"_id": 1})]
+
+
+def list_themes() -> list[dict]:
+    db = get_db()
+    themes = []
+    for doc in db[COLLECTION].find({}):
+        item = dict(doc)
+        item.pop("_id", None)
+        themes.append(item)
+    return themes
